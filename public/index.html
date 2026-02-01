@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>GameDev Registry</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .hidden { display: none; }
+        .card { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; position: relative; }
+        .admin-controls { background: #fff3f3; padding: 10px; border-radius: 5px; margin-top: 10px; }
+        input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button.delete-btn { background: #dc3545; width: auto; }
+        button.logout-btn { background: #6c757d; margin-top: 20px; }
+        .nav { display: flex; justify-content: space-between; align-items: center; }
+        .badge { background: #e2e2e2; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="authSection">
+        <h2>Welcome to GameDev Registry</h2>
+        <div id="loginForm">
+            <h3>Login</h3>
+            <input type="email" id="loginEmail" placeholder="Email" required>
+            <input type="password" id="loginPassword" placeholder="Password" required>
+            <button onclick="handleLogin()">Login</button>
+            <p>Don't have an account? <a href="#" onclick="toggleAuth(true)">Register here</a></p>
+        </div>
+        <div id="registerForm" class="hidden">
+            <h3>Register</h3>
+            <input type="email" id="regEmail" placeholder="Email (use 'admin' in email for admin rights)" required>
+            <input type="password" id="regPassword" placeholder="Password" required>
+            <button onclick="handleRegister()">Register</button>
+            <p id="regMessage" style="color: green;"></p>
+            <p>Already have an account? <a href="#" onclick="toggleAuth(false)">Login here</a></p>
+        </div>
+    </div>
+
+    <div id="mainSection" class="hidden">
+        <div class="nav">
+            <h2>Dashboard</h2>
+            <div>
+                <span id="userInfo" class="badge"></span>
+                <button onclick="logout()" class="logout-btn">Logout</button>
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom:20px;">
+            <button onclick="loadDevelopers()">Developers</button>
+            <button onclick="loadGames()">Games</button>
+        </div>
+
+        <div id="adminForm" class="admin-controls hidden">
+            <h3 id="formTitle">Add New Entry</h3>
+            <select id="entryType" onchange="toggleFormInputs()">
+                <option value="developer">Developer</option>
+                <option value="game">Game</option>
+            </select>
+
+            <div id="devInputs">
+                <input type="text" id="devName" placeholder="Developer Name">
+                <input type="text" id="devCountry" placeholder="Country">
+                <input type="number" id="devYear" placeholder="Founded Year">
+                <button onclick="createDeveloper()">Add Developer</button>
+            </div>
+
+            <div id="gameInputs" class="hidden">
+                <input type="text" id="gameTitle" placeholder="Game Title">
+                <input type="text" id="gameGenre" placeholder="Genre">
+                <input type="number" id="gameReleaseYear" placeholder="Release Year">
+                <select id="gameDevSelect">
+                    <option value="">Select Developer...</option>
+                </select>
+                <button onclick="createGame()">Add Game</button>
+            </div>
+        </div>
+
+        <div id="contentList">
+        </div>
+    </div>
+
+    <div id="detailSection" class="hidden">
+        <button onclick="showMain()">← Back</button>
+        <div id="detailContent"></div>
+    </div>
+</div>
+
+<script>
+    let currentUser = null;
+
+    function toggleAuth(showReg) {
+        document.getElementById('loginForm').classList.toggle('hidden', showReg);
+        document.getElementById('registerForm').classList.toggle('hidden', !showReg);
+    }
+
+    async function handleLogin() {
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ email, password })
+        });
+
+        const data = await res.json();
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('role', data.role);
+            localStorage.setItem('userEmail', email);
+
+            alert('Login successful!');
+            showMainPage();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    }
+
+    async function handleRegister() {
+        const email = document.getElementById('regEmail').value;
+        const password = document.getElementById('regPassword').value;
+
+        const res = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+            document.getElementById('regMessage').innerText = data.message;
+            document.getElementById('regEmail').value = '';
+            document.getElementById('regPassword').value = '';
+        } else {
+            alert('Error: ' + data.error);
+        }
+    }
+
+    function showMainPage() {
+        const role = localStorage.getItem('role');
+        const email = localStorage.getItem('email');
+
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('mainSection').classList.remove('hidden');
+        document.getElementById('userInfo').innerText = `${email} (${role})`;
+
+        if (role === 'admin') {
+            document.getElementById('adminForm').classList.remove('hidden');
+        }
+        loadDevelopers();
+    }
+
+    function logout() {
+        localStorage.clear();
+        location.reload();
+    }
+
+    async function loadDevelopers() {
+        const res = await fetch('/developers');
+        const devs = await res.json();
+        const role = localStorage.getItem('role');
+        
+        const list = document.getElementById('contentList');
+        list.innerHTML = '<h3>Developers</h3>' + devs.map(dev => `
+            <div class="card">
+                <strong>${dev.name}</strong> (${dev.country})
+                ${role === 'admin' ? `<button class="delete-btn" onclick="deleteDev('${dev._id}')">Delete</button>` : ''}
+            </div>
+        `).join('');
+    }
+
+    async function loadGames() {
+        const res = await fetch('/games');
+        const games = await res.json();
+        
+        const list = document.getElementById('contentList');
+        list.innerHTML = '<h3>Games</h3>' + games.map(game => `
+            <div class="card" onclick="showGameDetail('${game._id}')" style="cursor:pointer">
+                <strong>${game.title}</strong> - ${game.genre}
+                <br><small>Click to see details</small>
+            </div>
+        `).join('');
+    }
+
+    async function showGameDetail(id) {
+        const res = await fetch(`/games/${id}`);
+        const game = await res.json();
+        
+        document.getElementById('mainSection').classList.add('hidden');
+        document.getElementById('detailSection').classList.remove('hidden');
+        
+        document.getElementById('detailContent').innerHTML = `
+            <h2>${game.title}</h2>
+            <p><strong>Genre:</strong> ${game.genre}</p>
+            <p><strong>Release Year:</strong> ${game.releaseYear}</p>
+            <p><strong>Developer ID:</strong> ${game.developer}</p>
+            <hr>
+            <p>This information is fetched from the secondary object schema.</p>
+        `;
+    }
+
+    async function createDeveloper() {
+        const payload = {
+            name: document.getElementById('devName').value,
+            country: document.getElementById('devCountry').value,
+            foundedYear: document.getElementById('devYear').value
+        };
+
+        const token = localStorage.getItem('token');
+        const res = await fetch('/developers', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert('Developer added!');
+            loadDevelopers();
+        } else {
+            const err = await res.json();
+            alert('Error: ' + err.error);
+        }
+    }
+
+    async function deleteDev(id) {
+        if (!confirm('Are you sure?')) return;
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/developers/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) loadDevelopers();
+    }
+
+    function toggleFormInputs() {
+        const type = document.getElementById('entryType').value;
+        const isDev = type === 'developer';
+        document.getElementById('devInputs').classList.toggle('hidden', !isDev);
+        document.getElementById('gameInputs').classList.toggle('hidden', isDev);
+        
+        if (!isDev) {
+            loadDevsForDropdown();
+        }
+    }
+
+    async function loadDevsForDropdown() {
+        const res = await fetch('/developers');
+        const devs = await res.json();
+        const select = document.getElementById('gameDevSelect');
+        
+        select.innerHTML = '<option value="">Select Developer...</option>' + 
+            devs.map(d => `<option value="${d._id}">${d.name}</option>`).join('');
+    }
+
+    async function createGame() {
+        const payload = {
+            title: document.getElementById('gameTitle').value,
+            genre: document.getElementById('gameGenre').value,
+            releaseYear: document.getElementById('gameReleaseYear').value,
+            developer: document.getElementById('gameDevSelect').value
+        };
+
+        const token = localStorage.getItem('token');
+        const res = await fetch('/games', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert('Game added!');
+            loadGames();
+        } else {
+            const err = await res.json();
+            alert('Error: ' + err.error);
+        }
+    }
+
+    async function deleteGame(id) {
+        const token = localStorage.getItem('token');
+        await fetch(`/games/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        loadGames();
+    }
+
+    function showMain() {
+        document.getElementById('detailSection').classList.add('hidden');
+        document.getElementById('mainSection').classList.remove('hidden');
+    }
+
+    if (localStorage.getItem('token')) {
+        showMainPage();
+    }
+</script>
+</body>
+</html>
